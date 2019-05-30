@@ -7,9 +7,9 @@
 // https://github.com/orofarne/gowchar/blob/master/LICENSE
 
 // +build !ios
-// +build linux darwin windows
+// +build freebsd linux darwin windows
 
-package hid
+package usb
 
 import (
 	"fmt"

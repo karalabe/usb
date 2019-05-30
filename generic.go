@@ -1,7 +1,7 @@
 // hid - Gopher Interface Devices (USB HID)
 // Copyright (c) 2019 Péter Szilágyi, Guillaume Ballet. All rights reserved.
 
-package hid
+package usb
 
 import (
 	"C"

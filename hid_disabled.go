@@ -6,7 +6,7 @@
 
 // +build !freebsd,!linux,!darwin,!windows ios !cgo
 
-package hid
+package usb
 
 // Supported returns whether this platform is supported by the HID library or not.
 // The goal of this method is to allow programatically handling platforms that do

@@ -9,7 +9,7 @@
 // +build !ios
 // +build freebsd linux darwin windows
 
-package hid
+package usb
 
 /*
 #include <wchar.h>
