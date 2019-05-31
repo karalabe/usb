@@ -16,47 +16,47 @@
 // Package usb provide interfaces for generic USB devices.
 package usb
 
-// DeviceType represents the type of a USB device (generic or HID)
-type DeviceType int
+import "errors"
 
-// List of supported device types
-const (
-	DeviceTypeGeneric DeviceType = 0
-	DeviceTypeHID     DeviceType = 1
-)
+// ErrDeviceClosed is returned for operations where the device closed before or
+// during the execution.
+var ErrDeviceClosed = errors.New("usb: device closed")
 
-// Enumerate returns a list of all the HID devices attached to the system which
-// match the vendor and product id:
-//  - If the vendor id is set to 0 then any vendor matches.
-//  - If the product id is set to 0 then any product matches.
-//  - If the vendor and product id are both 0, all HID devices are returned.
-// func Enumerate(vendorID uint16, productID uint16) []DeviceInfo {
-// }
+// ErrUnsupportedPlatform is returned for all operations where the underlying
+// operating system is not supported by the library.
+var ErrUnsupportedPlatform = errors.New("usb: unsupported platform")
 
-// DeviceInfo is a generic libusb info interface
-type DeviceInfo interface {
-	// Type returns the type of the device (generic or HID)
-	Type() DeviceType
+// DeviceInfo contains all the information we know about a USB device. In case of
+// HID devices, that might be a lot more extensive (empty fields for raw USB).
+type DeviceInfo struct {
+	Path         string // Platform-specific device path
+	VendorID     uint16 // Device Vendor ID
+	ProductID    uint16 // Device Product ID
+	Release      uint16 // Device Release Number in binary-coded decimal, also known as Device Version Number
+	Serial       string // Serial Number
+	Manufacturer string // Manufacturer String
+	Product      string // Product string
+	UsagePage    uint16 // Usage Page for this Device/Interface (Windows/Mac only)
+	Usage        uint16 // Usage for this Device/Interface (Windows/Mac only)
 
-	// Platform-specific device path
-	GetPath() string
+	// The USB interface which this logical device
+	// represents. Valid on both Linux implementations
+	// in all cases, and valid on the Windows implementation
+	// only if the device contains more than one interface.
+	Interface int
 
-	// IDs returns the vendor and product IDs for the device,
-	// as well as the endpoint id and the usage page.
-	IDs() (uint16, uint16, int, uint16)
-
-	// Open tries to open the USB device represented by the current DeviceInfo
-	Open() (Device, error)
+	// Raw low level libusb endpoint data for simplified communication
+	rawDevice interface{}
+	rawReader *uint8
+	rawWriter *uint8
 }
 
-// Device is a generic libusb device interface
+// Device is a generic USB device interface. It may either be backed by a USB HID
+// device or a low level raw (libusb) device.
 type Device interface {
 	Close() error
 
 	Write(b []byte) (int, error)
 
 	Read(b []byte) (int, error)
-
-	// Type returns the type of the device (generic or HID)
-	Type() DeviceType
 }
