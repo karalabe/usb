@@ -25,7 +25,7 @@ package usb
 
 #cgo linux CFLAGS: -DOS_LINUX -D_GNU_SOURCE
 #cgo linux,!android LDFLAGS: -lrt
-#cgo darwin CFLAGS: -DOS_DARWIN
+#cgo darwin CFLAGS: -DOS_DARWIN -DHAVE_SYS_TIME_H
 #cgo darwin LDFLAGS: -framework CoreFoundation -framework IOKit -lobjc
 #cgo windows CFLAGS: -DOS_WINDOWS
 #cgo windows LDFLAGS: -lsetupapi
