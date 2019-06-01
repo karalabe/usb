@@ -626,35 +626,9 @@ struct winusb_interface {
 typedef void * PHIDP_PREPARSED_DATA;
 
 #include <pshpack1.h>
-
-typedef struct _HIDD_ATTIRBUTES {
-	ULONG Size;
-	USHORT VendorID;
-	USHORT ProductID;
-	USHORT VersionNumber;
-} HIDD_ATTRIBUTES, *PHIDD_ATTRIBUTES;
-
 #include <poppack.h>
 
 typedef USHORT USAGE;
-typedef struct _HIDP_CAPS {
-	USAGE Usage;
-	USAGE UsagePage;
-	USHORT InputReportByteLength;
-	USHORT OutputReportByteLength;
-	USHORT FeatureReportByteLength;
-	USHORT Reserved[17];
-	USHORT NumberLinkCollectionNodes;
-	USHORT NumberInputButtonCaps;
-	USHORT NumberInputValueCaps;
-	USHORT NumberInputDataIndices;
-	USHORT NumberOutputButtonCaps;
-	USHORT NumberOutputValueCaps;
-	USHORT NumberOutputDataIndices;
-	USHORT NumberFeatureButtonCaps;
-	USHORT NumberFeatureValueCaps;
-	USHORT NumberFeatureDataIndices;
-} HIDP_CAPS, *PHIDP_CAPS;
 
 typedef enum _HIDP_REPORT_TYPE {
 	HidP_Input,
@@ -701,15 +675,6 @@ typedef struct _HIDP_VALUE_CAPS {
 
 DLL_DECLARE_HANDLE(hid);
 DLL_DECLARE_FUNC(WINAPI, VOID, HidD_GetHidGuid, (LPGUID));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetAttributes, (HANDLE, PHIDD_ATTRIBUTES));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetPreparsedData, (HANDLE, PHIDP_PREPARSED_DATA *));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_FreePreparsedData, (PHIDP_PREPARSED_DATA));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetManufacturerString, (HANDLE, PVOID, ULONG));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetProductString, (HANDLE, PVOID, ULONG));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetSerialNumberString, (HANDLE, PVOID, ULONG));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetIndexedString, (HANDLE, ULONG, PVOID, ULONG));
-DLL_DECLARE_FUNC(WINAPI, LONG, HidP_GetCaps, (PHIDP_PREPARSED_DATA, PHIDP_CAPS));
-DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_SetNumInputBuffers, (HANDLE, ULONG));
 DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_GetPhysicalDescriptor, (HANDLE, PVOID, ULONG));
 DLL_DECLARE_FUNC(WINAPI, BOOL, HidD_FlushQueue, (HANDLE));
 DLL_DECLARE_FUNC(WINAPI, BOOL, HidP_GetValueCaps, (HIDP_REPORT_TYPE, PHIDP_VALUE_CAPS, PULONG, PHIDP_PREPARSED_DATA));

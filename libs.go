@@ -50,6 +50,7 @@ package usb
 	#include "hidapi/mac/hid.c"
 #elif OS_WINDOWS
 	#include "os/windows_nt_common.c"
+	#include "os/windows_usbdk.c"
 	#include "os/windows_winusb.c"
 	#include "hidapi/windows/hid.c"
 #elif OS_FREEBSD
