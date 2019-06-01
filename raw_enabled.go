@@ -102,13 +102,16 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 					}
 					var reader, writer *uint8
 					for _, end := range ends {
-						switch {
-						case end.bEndpointAddress&C.LIBUSB_ENDPOINT_OUT == C.LIBUSB_ENDPOINT_OUT && end.bmAttributes == C.LIBUSB_TRANSFER_TYPE_INTERRUPT:
-							writer = new(uint8)
-							*writer = uint8(end.bEndpointAddress)
-						case end.bEndpointAddress&C.LIBUSB_ENDPOINT_IN == C.LIBUSB_ENDPOINT_IN && end.bmAttributes == C.LIBUSB_TRANSFER_TYPE_INTERRUPT:
+						// Skip any non-interrupt endpoints
+						if end.bmAttributes != C.LIBUSB_TRANSFER_TYPE_INTERRUPT {
+							continue
+						}
+						if end.bEndpointAddress&C.LIBUSB_ENDPOINT_IN == C.LIBUSB_ENDPOINT_IN {
 							reader = new(uint8)
 							*reader = uint8(end.bEndpointAddress)
+						} else {
+							writer = new(uint8)
+							*writer = uint8(end.bEndpointAddress)
 						}
 					}
 					// If both in and out interrupts are available, match the device
