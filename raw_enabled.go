@@ -93,6 +93,10 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 					Cap:  int(iface.num_altsetting),
 				}
 				for _, alt := range alts {
+					// Skip HID interfaces if requested, they will be handled later
+					if skipHid && alt.bInterfaceClass == C.LIBUSB_CLASS_HID {
+						continue
+					}
 					// Find the endpoints that can speak libusb interrupts
 					var ends []C.struct_libusb_endpoint_descriptor
 					*(*reflect.SliceHeader)(unsafe.Pointer(&ends)) = reflect.SliceHeader{
