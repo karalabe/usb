@@ -30,6 +30,7 @@ package usb
 #cgo windows CFLAGS: -DOS_WINDOWS
 #cgo windows LDFLAGS: -lsetupapi
 #cgo freebsd CFLAGS: -DOS_FREEBSD
+#cgo freebsd LDFLAGS: -lusb
 #cgo openbsd CFLAGS: -DOS_OPENBSD
 
 #if defined(OS_LINUX) || defined(OS_DARWIN) || defined(DOS_FREEBSD) || defined(OS_OPENBSD)
@@ -54,17 +55,20 @@ package usb
 	#include "os/windows_winusb.c"
 	#include "hidapi/windows/hid.c"
 #elif OS_FREEBSD
+	#include <libusb.h>
 	#include "hidapi/libusb/hid.c"
 #elif DOS_OPENBSD
 	#include "os/openbsd_usb.c"
 	#include "hidapi/libusb/hid.c"
 #endif
 
-#include "core.c"
-#include "descriptor.c"
-#include "hotplug.c"
-#include "io.c"
-#include "strerror.c"
-#include "sync.c"
+#ifndef OS_FREEBSD
+	#include "core.c"
+	#include "descriptor.c"
+	#include "hotplug.c"
+	#include "io.c"
+	#include "strerror.c"
+	#include "sync.c"
+#endif
 */
 import "C"
