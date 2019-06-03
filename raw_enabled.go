@@ -17,7 +17,12 @@
 
 package usb
 
-// #include "./libusb/libusb/libusb.h"
+/*
+	#include "./libusb/libusb/libusb.h"
+
+	// ctx is a global libusb context to interact with devices through.
+	libusb_context* ctx;
+*/
 import "C"
 
 import (
@@ -33,15 +38,32 @@ import (
 //  - If the product id is set to 0 then any product matches.
 //  - If the vendor and product id are both 0, all USB devices are returned.
 func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo, error) {
-	// Create a context to interact with USB devices through
-	var ctx *C.libusb_context
-	errCode := int(C.libusb_init((**C.libusb_context)(&ctx)))
-	if errCode < 0 {
-		return nil, fmt.Errorf("Error while initializing libusb: %d", errCode)
+	// Enumerate the devices, and free all the matching refcounts (we'll reopen any
+	// explicitly requested).
+	infos, err := enumerateRawWithRef(vendorID, productID, skipHid)
+	for _, info := range infos {
+		C.libusb_unref_device(info.rawDevice.(*C.libusb_device))
+	}
+	// If enumeration failed, don't return anything, otherwise everything
+	if err != nil {
+		return nil, err
+	}
+	return infos, nil
+}
+
+// enumerateRawWithRef is the internal device enumerator that retains 1 reference
+// to every matched device so they may selectively be opened on request.
+func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo, error) {
+	// Ensure we have a libusb context to interact through. The enumerate call is
+	// protexted by a mutex outside, so it's fine to do the below check and init.
+	if C.ctx == nil {
+		if err := fromRawErrno(C.libusb_init((**C.libusb_context)(&C.ctx))); err != nil {
+			return nil, fmt.Errorf("failed to initialize libusb: %v", err)
+		}
 	}
 	// Retrieve all the available USB devices and wrap them in Go
 	var deviceList **C.libusb_device
-	count := C.libusb_get_device_list(ctx, &deviceList)
+	count := C.libusb_get_device_list(C.ctx, &deviceList)
 	if count < 0 {
 		return nil, rawError(count)
 	}
@@ -59,7 +81,7 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 		// Retrieve the libusb device descriptor and skip non-queried ones
 		var desc C.struct_libusb_device_descriptor
 		if err := fromRawErrno(C.libusb_get_device_descriptor(dev, &desc)); err != nil {
-			return nil, fmt.Errorf("failed to get device %d descriptor: %v", devnum, err)
+			return infos, fmt.Errorf("failed to get device %d descriptor: %v", devnum, err)
 		}
 		if (vendorID > 0 && uint16(desc.idVendor) != vendorID) || (productID > 0 && uint16(desc.idProduct) != productID) {
 			continue
@@ -73,7 +95,7 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 			// Retrieve the all the possible USB configurations of the device
 			var cfg *C.struct_libusb_config_descriptor
 			if err := fromRawErrno(C.libusb_get_config_descriptor(dev, C.uint8_t(cfgnum), &cfg)); err != nil {
-				return nil, fmt.Errorf("failed to get device %d config %d: %v", devnum, cfgnum, err)
+				return infos, fmt.Errorf("failed to get device %d config %d: %v", devnum, cfgnum, err)
 			}
 			var ifaces []C.struct_libusb_interface
 			*(*reflect.SliceHeader)(unsafe.Pointer(&ifaces)) = reflect.SliceHeader{
@@ -120,12 +142,17 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 					}
 					// If both in and out interrupts are available, match the device
 					if reader != nil && writer != nil {
+						// Enumeration matched, bump the device refcount to avoid cleaning it up
+						C.libusb_ref_device(dev)
+
+						port := uint8(C.libusb_get_port_number(dev))
 						infos = append(infos, DeviceInfo{
-							Path:      fmt.Sprintf("%x:%x:%d", vendorID, uint16(desc.idProduct), uint8(C.libusb_get_port_number(dev))),
+							Path:      fmt.Sprintf("%x:%x:%d", vendorID, uint16(desc.idProduct), port),
 							VendorID:  uint16(desc.idVendor),
 							ProductID: uint16(desc.idProduct),
 							Interface: ifacenum,
 							rawDevice: dev,
+							rawPort:   &port,
 							rawReader: reader,
 							rawWriter: writer,
 						})
@@ -139,9 +166,38 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 
 // openRaw connects to a low level libusb device by its path name.
 func openRaw(info DeviceInfo) (*RawDevice, error) {
+	// Enumerate all the devices matching this particular info
+	matches, err := enumerateRawWithRef(info.VendorID, info.ProductID, false)
+	if err != nil {
+		// Enumeration failed, make sure any subresults are released
+		for _, match := range matches {
+			C.libusb_unref_device(match.rawDevice.(*C.libusb_device))
+		}
+		return nil, err
+	}
+	// Find the specific endpoint we're interested in
+	var device *C.libusb_device
+	for _, match := range matches {
+		// Keep the matching device reference, release anything else
+		if device == nil && *match.rawPort == *info.rawPort && match.Interface == info.Interface {
+			device = match.rawDevice.(*C.libusb_device)
+		} else {
+			C.libusb_unref_device(match.rawDevice.(*C.libusb_device))
+		}
+	}
+	if device == nil {
+		return nil, fmt.Errorf("failed to open device: not found")
+	}
+	// Open the mathcing device
+	info.rawDevice = device
+
 	var handle *C.struct_libusb_device_handle
 	if err := fromRawErrno(C.libusb_open(info.rawDevice.(*C.libusb_device), (**C.struct_libusb_device_handle)(&handle))); err != nil {
 		return nil, fmt.Errorf("failed to open device: %v", err)
+	}
+	if err := fromRawErrno(C.libusb_claim_interface(handle, (C.int)(info.Interface))); err != nil {
+		C.libusb_close(handle)
+		return nil, fmt.Errorf("failed to claim interface: %v", err)
 	}
 	return &RawDevice{
 		DeviceInfo: info,
@@ -163,9 +219,12 @@ func (dev *RawDevice) Close() error {
 	defer dev.lock.Unlock()
 
 	if dev.handle != nil {
+		C.libusb_release_interface(dev.handle, (C.int)(dev.Interface))
 		C.libusb_close(dev.handle)
 		dev.handle = nil
 	}
+	C.libusb_unref_device(dev.rawDevice.(*C.libusb_device))
+
 	return nil
 }
 
@@ -176,7 +235,7 @@ func (dev *RawDevice) Write(b []byte) (int, error) {
 
 	var transferred C.int
 	if err := fromRawErrno(C.libusb_interrupt_transfer(dev.handle, (C.uchar)(*dev.rawWriter), (*C.uchar)(&b[0]), (C.int)(len(b)), &transferred, (C.uint)(0))); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to write to device: %v", err)
 	}
 	return int(transferred), nil
 }
@@ -188,7 +247,7 @@ func (dev *RawDevice) Read(b []byte) (int, error) {
 
 	var transferred C.int
 	if err := fromRawErrno(C.libusb_interrupt_transfer(dev.handle, (C.uchar)(*dev.rawReader), (*C.uchar)(&b[0]), (C.int)(len(b)), &transferred, (C.uint)(0))); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to read from device: %v", err)
 	}
 	return int(transferred), nil
 }

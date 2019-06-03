@@ -47,8 +47,9 @@ type DeviceInfo struct {
 
 	// Raw low level libusb endpoint data for simplified communication
 	rawDevice interface{}
-	rawReader *uint8
-	rawWriter *uint8
+	rawPort   *uint8 // Pointer to differentiate between unset and port 0
+	rawReader *uint8 // Pointer to differentiate between unset and endpoint 0
+	rawWriter *uint8 // Pointer to differentiate between unset and endpoint 0
 }
 
 // Device is a generic USB device interface. It may either be backed by a USB HID

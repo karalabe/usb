@@ -91,7 +91,7 @@ func (info DeviceInfo) Open() (Device, error) {
 	enumerateLock.Lock()
 	defer enumerateLock.Unlock()
 
-	if info.rawDevice == nil || info.rawReader == nil || info.rawWriter == nil {
+	if info.rawDevice == nil {
 		return openHid(info)
 	}
 	return openRaw(info)

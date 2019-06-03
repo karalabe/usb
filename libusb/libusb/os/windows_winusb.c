@@ -1899,7 +1899,24 @@ const struct windows_usb_api_backend usb_api_backend[USB_API_MAX] = {
 	{
 		USB_API_COMPOSITE,
 		"Composite API",
-		// No supported operations
+		composite_driver_names,
+		ARRAYSIZE(composite_driver_names),
+		NULL,	/* init */
+		NULL,	/* exit */
+		composite_open,
+		composite_close,
+		NULL,	/* configure_endpoints */
+		composite_claim_interface,
+		composite_set_interface_altsetting,
+		composite_release_interface,
+		composite_clear_halt,
+		composite_reset_device,
+		composite_submit_bulk_transfer,
+		composite_submit_iso_transfer,
+		composite_submit_control_transfer,
+		composite_abort_control,
+		composite_abort_transfers,
+		composite_copy_transfer_data,
 	},
 	{
 		USB_API_WINUSBX,
@@ -2055,7 +2072,6 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 			handle_priv->interface_handle[i].dev_handle = file_handle;
 		}
 	}
-
 	return LIBUSB_SUCCESS;
 }
 
@@ -2692,4 +2708,302 @@ static int winusbx_copy_transfer_data(int sub_api, struct usbi_transfer *itransf
 
 	itransfer->transferred += io_size;
 	return LIBUSB_TRANSFER_COMPLETED;
+}
+
+/*
+ * Composite API functions
+ */
+static int composite_open(int sub_api, struct libusb_device_handle *dev_handle)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+	int r = LIBUSB_ERROR_NOT_FOUND;
+	uint8_t i;
+	// SUB_API_MAX + 1 as the SUB_API_MAX pos is used to indicate availability of HID
+	bool available[SUB_API_MAX + 1] = { 0 };
+
+	for (i = 0; i < USB_MAXINTERFACES; i++) {
+		switch (priv->usb_interface[i].apib->id) {
+		case USB_API_WINUSBX:
+			if (priv->usb_interface[i].sub_api != SUB_API_NOTSET) {
+				available[priv->usb_interface[i].sub_api] = true;
+			}
+			break;
+		case USB_API_HID:
+			available[SUB_API_MAX] = true;
+			break;
+		default:
+			break;
+		}
+	}
+
+	for (i = 0; i < SUB_API_MAX; i++) { // WinUSB-like drivers
+		if (available[i]) {
+			r = usb_api_backend[USB_API_WINUSBX].open(i, dev_handle);
+			if (r != LIBUSB_SUCCESS) {
+				return r;
+			}
+		}
+	}
+/*
+	if (available[SUB_API_MAX]) // HID driver
+		r = hid_open(SUB_API_NOTSET, dev_handle);
+*/
+	return r;
+}
+
+static void composite_close(int sub_api, struct libusb_device_handle *dev_handle)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+	uint8_t i;
+	// SUB_API_MAX + 1 as the SUB_API_MAX pos is used to indicate availability of HID
+	bool available[SUB_API_MAX + 1] = { 0 };
+
+	for (i = 0; i < USB_MAXINTERFACES; i++) {
+		switch (priv->usb_interface[i].apib->id) {
+		case USB_API_WINUSBX:
+			if (priv->usb_interface[i].sub_api != SUB_API_NOTSET)
+				available[priv->usb_interface[i].sub_api] = true;
+			break;
+		case USB_API_HID:
+			available[SUB_API_MAX] = true;
+			break;
+		default:
+			break;
+		}
+	}
+
+	for (i = 0; i < SUB_API_MAX; i++) { // WinUSB-like drivers
+		if (available[i])
+			usb_api_backend[USB_API_WINUSBX].close(i, dev_handle);
+	}
+/*
+	if (available[SUB_API_MAX]) // HID driver
+		hid_close(SUB_API_NOTSET, dev_handle);
+*/
+}
+
+static int composite_claim_interface(int sub_api, struct libusb_device_handle *dev_handle, int iface)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+
+	CHECK_SUPPORTED_API(priv->usb_interface[iface].apib, claim_interface);
+
+	return priv->usb_interface[iface].apib->
+		claim_interface(priv->usb_interface[iface].sub_api, dev_handle, iface);
+}
+
+static int composite_set_interface_altsetting(int sub_api, struct libusb_device_handle *dev_handle, int iface, int altsetting)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+
+	CHECK_SUPPORTED_API(priv->usb_interface[iface].apib, set_interface_altsetting);
+
+	return priv->usb_interface[iface].apib->
+		set_interface_altsetting(priv->usb_interface[iface].sub_api, dev_handle, iface, altsetting);
+}
+
+static int composite_release_interface(int sub_api, struct libusb_device_handle *dev_handle, int iface)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+
+	CHECK_SUPPORTED_API(priv->usb_interface[iface].apib, release_interface);
+
+	return priv->usb_interface[iface].apib->
+		release_interface(priv->usb_interface[iface].sub_api, dev_handle, iface);
+}
+
+static int composite_submit_control_transfer(int sub_api, struct usbi_transfer *itransfer)
+{
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct libusb_context *ctx = DEVICE_CTX(transfer->dev_handle->dev);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	struct libusb_config_descriptor *conf_desc;
+	WINUSB_SETUP_PACKET *setup = (WINUSB_SETUP_PACKET *)transfer->buffer;
+	int iface, pass, r;
+
+	// Interface shouldn't matter for control, but it does in practice, with Windows'
+	// restrictions with regards to accessing HID keyboards and mice. Try to target
+	// a specific interface first, if possible.
+	switch (LIBUSB_REQ_RECIPIENT(setup->RequestType)) {
+	case LIBUSB_RECIPIENT_INTERFACE:
+		iface = setup->Index & 0xFF;
+		break;
+	case LIBUSB_RECIPIENT_ENDPOINT:
+		r = libusb_get_active_config_descriptor(transfer->dev_handle->dev, &conf_desc);
+		if (r == LIBUSB_SUCCESS) {
+			iface = get_interface_by_endpoint(conf_desc, (setup->Index & 0xFF));
+			libusb_free_config_descriptor(conf_desc);
+			break;
+		}
+		// Fall through if not able to determine interface
+	default:
+		iface = -1;
+		break;
+	}
+
+	// Try and target a specific interface if the control setup indicates such
+	if ((iface >= 0) && (iface < USB_MAXINTERFACES)) {
+		usbi_dbg("attempting control transfer targeted to interface %d", iface);
+		if ((priv->usb_interface[iface].path != NULL)
+				&& (priv->usb_interface[iface].apib->submit_control_transfer != NULL)) {
+			r = priv->usb_interface[iface].apib->submit_control_transfer(priv->usb_interface[iface].sub_api, itransfer);
+			if (r == LIBUSB_SUCCESS)
+				return r;
+		}
+	}
+
+	// Either not targeted to a specific interface or no luck in doing so.
+	// Try a 2 pass approach with all interfaces.
+	for (pass = 0; pass < 2; pass++) {
+		for (iface = 0; iface < USB_MAXINTERFACES; iface++) {
+			if ((priv->usb_interface[iface].path != NULL)
+					&& (priv->usb_interface[iface].apib->submit_control_transfer != NULL)) {
+				if ((pass == 0) && (priv->usb_interface[iface].restricted_functionality)) {
+					usbi_dbg("trying to skip restricted interface #%d (HID keyboard or mouse?)", iface);
+					continue;
+				}
+				usbi_dbg("using interface %d", iface);
+				r = priv->usb_interface[iface].apib->submit_control_transfer(priv->usb_interface[iface].sub_api, itransfer);
+				// If not supported on this API, it may be supported on another, so don't give up yet!!
+				if (r == LIBUSB_ERROR_NOT_SUPPORTED)
+					continue;
+				return r;
+			}
+		}
+	}
+	usbi_err(ctx, "no libusb supported interfaces to complete request");
+	return LIBUSB_ERROR_NOT_FOUND;
+}
+
+static int composite_submit_bulk_transfer(int sub_api, struct usbi_transfer *itransfer) {
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct libusb_context *ctx = DEVICE_CTX(transfer->dev_handle->dev);
+	struct winusb_device_handle_priv *handle_priv = _device_handle_priv(transfer->dev_handle);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	int current_interface;
+
+	current_interface = interface_by_endpoint(priv, handle_priv, transfer->endpoint);
+	if (current_interface < 0) {
+		usbi_err(ctx, "unable to match endpoint to an open interface - cancelling transfer");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, submit_bulk_transfer);
+
+	return priv->usb_interface[current_interface].apib->
+		submit_bulk_transfer(priv->usb_interface[current_interface].sub_api, itransfer);
+}
+
+static int composite_submit_iso_transfer(int sub_api, struct usbi_transfer *itransfer) {
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct libusb_context *ctx = DEVICE_CTX(transfer->dev_handle->dev);
+	struct winusb_device_handle_priv *handle_priv = _device_handle_priv(transfer->dev_handle);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	int current_interface;
+
+	current_interface = interface_by_endpoint(priv, handle_priv, transfer->endpoint);
+	if (current_interface < 0) {
+		usbi_err(ctx, "unable to match endpoint to an open interface - cancelling transfer");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, submit_iso_transfer);
+
+	return priv->usb_interface[current_interface].apib->
+		submit_iso_transfer(priv->usb_interface[current_interface].sub_api, itransfer);
+}
+
+static int composite_clear_halt(int sub_api, struct libusb_device_handle *dev_handle, unsigned char endpoint)
+{
+	struct libusb_context *ctx = DEVICE_CTX(dev_handle->dev);
+	struct winusb_device_handle_priv *handle_priv = _device_handle_priv(dev_handle);
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+	int current_interface;
+
+	current_interface = interface_by_endpoint(priv, handle_priv, endpoint);
+	if (current_interface < 0) {
+		usbi_err(ctx, "unable to match endpoint to an open interface - cannot clear");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, clear_halt);
+
+	return priv->usb_interface[current_interface].apib->
+		clear_halt(priv->usb_interface[current_interface].sub_api, dev_handle, endpoint);
+}
+
+static int composite_abort_control(int sub_api, struct usbi_transfer *itransfer)
+{
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct winusb_transfer_priv *transfer_priv = usbi_transfer_get_os_priv(itransfer);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	int current_interface = transfer_priv->interface_number;
+
+	if ((current_interface < 0) || (current_interface >= USB_MAXINTERFACES)) {
+		usbi_err(TRANSFER_CTX(transfer), "program assertion failed: invalid interface_number");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, abort_control);
+
+	return priv->usb_interface[current_interface].apib->
+		abort_control(priv->usb_interface[current_interface].sub_api, itransfer);
+}
+
+static int composite_abort_transfers(int sub_api, struct usbi_transfer *itransfer)
+{
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct winusb_transfer_priv *transfer_priv = usbi_transfer_get_os_priv(itransfer);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	int current_interface = transfer_priv->interface_number;
+
+	if ((current_interface < 0) || (current_interface >= USB_MAXINTERFACES)) {
+		usbi_err(TRANSFER_CTX(transfer), "program assertion failed: invalid interface_number");
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, abort_transfers);
+
+	return priv->usb_interface[current_interface].apib->
+		abort_transfers(priv->usb_interface[current_interface].sub_api, itransfer);
+}
+
+static int composite_reset_device(int sub_api, struct libusb_device_handle *dev_handle)
+{
+	struct winusb_device_priv *priv = _device_priv(dev_handle->dev);
+	int r;
+	uint8_t i;
+	bool available[SUB_API_MAX];
+
+	for (i = 0; i < SUB_API_MAX; i++)
+		available[i] = false;
+
+	for (i = 0; i < USB_MAXINTERFACES; i++) {
+		if ((priv->usb_interface[i].apib->id == USB_API_WINUSBX)
+				&& (priv->usb_interface[i].sub_api != SUB_API_NOTSET))
+			available[priv->usb_interface[i].sub_api] = true;
+	}
+
+	for (i = 0; i < SUB_API_MAX; i++) {
+		if (available[i]) {
+			r = usb_api_backend[USB_API_WINUSBX].reset_device(i, dev_handle);
+			if (r != LIBUSB_SUCCESS)
+				return r;
+		}
+	}
+
+	return LIBUSB_SUCCESS;
+}
+
+static int composite_copy_transfer_data(int sub_api, struct usbi_transfer *itransfer, uint32_t io_size)
+{
+	struct libusb_transfer *transfer = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+	struct winusb_transfer_priv *transfer_priv = usbi_transfer_get_os_priv(itransfer);
+	struct winusb_device_priv *priv = _device_priv(transfer->dev_handle->dev);
+	int current_interface = transfer_priv->interface_number;
+
+	CHECK_SUPPORTED_API(priv->usb_interface[current_interface].apib, copy_transfer_data);
+
+	return priv->usb_interface[current_interface].apib->
+		copy_transfer_data(priv->usb_interface[current_interface].sub_api, itransfer, io_size);
 }
