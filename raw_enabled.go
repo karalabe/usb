@@ -165,7 +165,7 @@ func enumerateRawWithRef(vendorID uint16, productID uint16) ([]DeviceInfo, error
 }
 
 // openRaw connects to a low level libusb device by its path name.
-func openRaw(info DeviceInfo) (*RawDevice, error) {
+func openRaw(info DeviceInfo) (*rawDevice, error) {
 	// Enumerate all the devices matching this particular info
 	matches, err := enumerateRawWithRef(info.VendorID, info.ProductID)
 	if err != nil {
@@ -199,14 +199,14 @@ func openRaw(info DeviceInfo) (*RawDevice, error) {
 		C.libusb_close(handle)
 		return nil, fmt.Errorf("failed to claim interface: %v", err)
 	}
-	return &RawDevice{
+	return &rawDevice{
 		DeviceInfo: info,
 		handle:     handle,
 	}, nil
 }
 
-// RawDevice is a live low level USB connected device handle.
-type RawDevice struct {
+// rawDevice is a live low level USB connected device handle.
+type rawDevice struct {
 	DeviceInfo // Embed the infos for easier access
 
 	handle *C.struct_libusb_device_handle // Low level USB device to communicate through
@@ -214,7 +214,7 @@ type RawDevice struct {
 }
 
 // Close releases the raw USB device handle.
-func (dev *RawDevice) Close() error {
+func (dev *rawDevice) Close() error {
 	dev.lock.Lock()
 	defer dev.lock.Unlock()
 
@@ -229,7 +229,7 @@ func (dev *RawDevice) Close() error {
 }
 
 // Write sends a binary blob to a low level USB device.
-func (dev *RawDevice) Write(b []byte) (int, error) {
+func (dev *rawDevice) Write(b []byte) (int, error) {
 	dev.lock.Lock()
 	defer dev.lock.Unlock()
 
@@ -241,7 +241,7 @@ func (dev *RawDevice) Write(b []byte) (int, error) {
 }
 
 // Read retrieves a binary blob from a low level USB device.
-func (dev *RawDevice) Read(b []byte) (int, error) {
+func (dev *rawDevice) Read(b []byte) (int, error) {
 	dev.lock.Lock()
 	defer dev.lock.Unlock()
 

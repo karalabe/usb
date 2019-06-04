@@ -55,9 +55,14 @@ type DeviceInfo struct {
 // Device is a generic USB device interface. It may either be backed by a USB HID
 // device or a low level raw (libusb) device.
 type Device interface {
+	// Close releases the USB device handle.
 	Close() error
 
+	// Write sends a binary blob to a USB device. For HID devices write uses reports,
+	// for low level USB write uses interrupt transfers.
 	Write(b []byte) (int, error)
 
+	// Read retrieves a binary blob from a USB device. For HID devices read uses
+	// reports, for low level USB read uses interrupt transfers.
 	Read(b []byte) (int, error)
 }
