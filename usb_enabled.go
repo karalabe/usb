@@ -50,7 +50,7 @@ func Enumerate(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
 	defer enumerateLock.Unlock()
 
 	// Enumerate all the raw USB devices and skip the HID ones
-	raws, err := enumerateRaw(vendorID, productID, true)
+	raws, err := enumerateRaw(vendorID, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func EnumerateRaw(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
 	enumerateLock.Lock()
 	defer enumerateLock.Unlock()
 
-	return enumerateRaw(vendorID, productID, false)
+	return enumerateRaw(vendorID, productID)
 }
 
 // EnumerateHid returns a list of all the HID devices attached to the system which

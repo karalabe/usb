@@ -37,10 +37,10 @@ import (
 //  - If the vendor id is set to 0 then any vendor matches.
 //  - If the product id is set to 0 then any product matches.
 //  - If the vendor and product id are both 0, all USB devices are returned.
-func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo, error) {
+func enumerateRaw(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
 	// Enumerate the devices, and free all the matching refcounts (we'll reopen any
 	// explicitly requested).
-	infos, err := enumerateRawWithRef(vendorID, productID, skipHid)
+	infos, err := enumerateRawWithRef(vendorID, productID)
 	for _, info := range infos {
 		C.libusb_unref_device(info.rawDevice.(*C.libusb_device))
 	}
@@ -53,7 +53,7 @@ func enumerateRaw(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo
 
 // enumerateRawWithRef is the internal device enumerator that retains 1 reference
 // to every matched device so they may selectively be opened on request.
-func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]DeviceInfo, error) {
+func enumerateRawWithRef(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
 	// Ensure we have a libusb context to interact through. The enumerate call is
 	// protexted by a mutex outside, so it's fine to do the below check and init.
 	if C.ctx == nil {
@@ -86,8 +86,8 @@ func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]Dev
 		if (vendorID > 0 && uint16(desc.idVendor) != vendorID) || (productID > 0 && uint16(desc.idProduct) != productID) {
 			continue
 		}
-		// Skip HID devices if requested, they will be handled later
-		if skipHid && desc.bDeviceClass == C.LIBUSB_CLASS_HID {
+		// Skip HID devices, they are handled directly by OS libraries
+		if desc.bDeviceClass == C.LIBUSB_CLASS_HID {
 			continue
 		}
 		// Iterate over all the configurations and find raw interfaces
@@ -115,8 +115,8 @@ func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]Dev
 					Cap:  int(iface.num_altsetting),
 				}
 				for _, alt := range alts {
-					// Skip HID interfaces if requested, they will be handled later
-					if skipHid && alt.bInterfaceClass == C.LIBUSB_CLASS_HID {
+					// Skip HID interfaces, they are handled directly by OS libraries
+					if alt.bInterfaceClass == C.LIBUSB_CLASS_HID {
 						continue
 					}
 					// Find the endpoints that can speak libusb interrupts
@@ -147,7 +147,7 @@ func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]Dev
 
 						port := uint8(C.libusb_get_port_number(dev))
 						infos = append(infos, DeviceInfo{
-							Path:      fmt.Sprintf("%x:%x:%d", vendorID, uint16(desc.idProduct), port),
+							Path:      fmt.Sprintf("%04x:%04x:%02d", vendorID, uint16(desc.idProduct), port),
 							VendorID:  uint16(desc.idVendor),
 							ProductID: uint16(desc.idProduct),
 							Interface: ifacenum,
@@ -167,7 +167,7 @@ func enumerateRawWithRef(vendorID uint16, productID uint16, skipHid bool) ([]Dev
 // openRaw connects to a low level libusb device by its path name.
 func openRaw(info DeviceInfo) (*RawDevice, error) {
 	// Enumerate all the devices matching this particular info
-	matches, err := enumerateRawWithRef(info.VendorID, info.ProductID, false)
+	matches, err := enumerateRawWithRef(info.VendorID, info.ProductID)
 	if err != nil {
 		// Enumeration failed, make sure any subresults are released
 		for _, match := range matches {
