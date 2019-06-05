@@ -35,12 +35,12 @@ func Enumerate(vendorID uint16, productID uint16) []DeviceInfo {
 // match the vendor and product id. On platforms that this file implements the
 // function is a noop and returns an empty list always.
 func EnumerateRaw(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
-	return nil
+	return nil, nil
 }
 
 // EnumerateHid returns a list of all the HID devices attached to the system which
 // match the vendor and product id. On platforms that this file implements the
 // function is a noop and returns an empty list always.
 func EnumerateHid(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
-	return nil
+	return nil, nil
 }
