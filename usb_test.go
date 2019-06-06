@@ -16,12 +16,59 @@
 package usb
 
 import (
+	"os"
+	"runtime"
 	"sync"
 	"testing"
 )
 
-// Tests that device enumeration can be called concurrently from multiple threads.
+// Tests that HID enumeration can be called concurrently from multiple threads.
+func TestThreadedEnumerateHid(t *testing.T) {
+	var pend sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		pend.Add(1)
+
+		go func(index int) {
+			defer pend.Done()
+			for j := 0; j < 512; j++ {
+				if _, err := EnumerateHid(uint16(index), 0); err != nil {
+					t.Errorf("thread %d, iter %d: failed to enumerate: %v", index, j, err)
+				}
+			}
+		}(i)
+	}
+	pend.Wait()
+}
+
+// Tests that RAW enumeration can be called concurrently from multiple threads.
+func TestThreadedEnumerateRaw(t *testing.T) {
+	// Travis does not have usbfs enabled in the Linux kernel
+	if os.Getenv("TRAVIS") != "" && runtime.GOOS == "linux" {
+		t.Skip("Linux on Travis doesn't have usbfs, skipping test")
+	}
+	// Yay, we can actually test this
+	var pend sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		pend.Add(1)
+
+		go func(index int) {
+			defer pend.Done()
+			for j := 0; j < 512; j++ {
+				if _, err := EnumerateRaw(uint16(index), 0); err != nil {
+					t.Errorf("thread %d, iter %d: failed to enumerate: %v", index, j, err)
+				}
+			}
+		}(i)
+	}
+	pend.Wait()
+}
+
+// Tests that generic enumeration can be called concurrently from multiple threads.
 func TestThreadedEnumerate(t *testing.T) {
+	// Travis does not have usbfs enabled in the Linux kernel
+	if os.Getenv("TRAVIS") != "" && runtime.GOOS == "linux" {
+		t.Skip("Linux on Travis doesn't have usbfs, skipping test")
+	}
 	var pend sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		pend.Add(1)
