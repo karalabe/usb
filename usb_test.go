@@ -29,7 +29,9 @@ func TestThreadedEnumerate(t *testing.T) {
 		go func(index int) {
 			defer pend.Done()
 			for j := 0; j < 512; j++ {
-				Enumerate(uint16(index), 0)
+				if _, err := Enumerate(uint16(index), 0); err != nil {
+					t.Errorf("thread %d, iter %d: failed to enumerate: %v", index, j, err)
+				}
 			}
 		}(i)
 	}

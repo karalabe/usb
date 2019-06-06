@@ -7,7 +7,7 @@
 // https://github.com/orofarne/gowchar/blob/master/LICENSE
 
 // +build !ios
-// +build freebsd linux darwin windows
+// +build freebsd,cgo linux,cgo darwin,cgo windows,cgo
 
 package usb
 

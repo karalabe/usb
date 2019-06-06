@@ -27,8 +27,8 @@ func Supported() bool {
 // Enumerate returns a list of all the USB devices attached to the system which
 // match the vendor and product id. On platforms that this file implements the
 // function is a noop and returns an empty list always.
-func Enumerate(vendorID uint16, productID uint16) []DeviceInfo {
-	return nil
+func Enumerate(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
+	return nil, nil
 }
 
 // EnumerateRaw returns a list of all the USB devices attached to the system which
