@@ -31,6 +31,16 @@ matrix:
       go: 1.12.x
     - os: osx
       go: 1.12.x
+    - os: linux
+      dist: xenial
+      go: 1.12.x
+      services:
+        - docker
+      env:
+        - docker
+      script:
+        - docker build -f Dockerfile.ubuntu .
+        - docker build -f Dockerfile.alpine .
 
 script:
   - go install ./...
