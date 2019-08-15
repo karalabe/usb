@@ -23,7 +23,7 @@ environment:
 install:
   - rmdir C:\go /s /q
   - appveyor DownloadFile https://storage.googleapis.com/golang/go1.12.6.windows-%GOARCH%.zip
-  - 7z x go1.12.6.windows-%GOARCH%.zip -y -oC:\ > NUL
+  - 7z x go1.12.8.windows-%GOARCH%.zip -y -oC:\ > NUL
   - go version
   - gcc --version
 
