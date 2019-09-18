@@ -74,6 +74,8 @@ extern "C" {
 	#pragma warning(disable:4996)
 #endif
 
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
