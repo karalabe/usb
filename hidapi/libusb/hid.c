@@ -49,7 +49,7 @@
 
 #include "hidapi.h"
 
-#ifdef __ANDROID__
+#if defined __ANDROID__ && __ANDROID_API__ < 24
 
 /* Barrier implementation because Android/Bionic don't have pthread_barrier.
    This implementation came from Brent Priddy and was posted on
