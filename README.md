@@ -11,7 +11,7 @@
 
 # Yet another USB library for Go
 
-The `usb` package is a cross platform, fully self-contained library for accessing and communicating with USB devices **either via HID or low level interrupts**. The goal of the library was to create a simple way to find-, attach to- and read/write form USB devices.
+The `usb` package is a cross platform, fully self-contained library for accessing and communicating with USB devices **either via HID or low level interrupts**. The goal of the library was to create a simple way to find-, attach to- and read/write from USB devices.
 
 There are multiple already existing USB libraries:
 
