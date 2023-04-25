@@ -50,7 +50,7 @@
 #include <stdatomic.h>
 #define libusb_darwin_atomic_fetch_add(x, y) atomic_fetch_add(x, y)
 
-_Atomic int32_t initCount = ATOMIC_VAR_INIT(0);
+_Atomic int32_t initCount = 0;
 #else
 /* use darwin atomics if the target is older than 10.12 */
 #include <libkern/OSAtomic.h>
