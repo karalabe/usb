@@ -45,12 +45,19 @@
   #include <objc/objc-auto.h>
 #endif
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_VERSION_13_0
+/* Apple deprecated C11 atomics on 13.0 Ventura, The ATOMIC_VAR_INIT deprecated on C17 */
+#include <stdatomic.h>
+#define libusb_darwin_atomic_fetch_add(x, y) atomic_fetch_add(x, y)
+
+static _Atomic int32_t initCount = 0;
+
+#elif MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
 /* Apple deprecated the darwin atomics in 10.12 in favor of C11 atomics */
 #include <stdatomic.h>
 #define libusb_darwin_atomic_fetch_add(x, y) atomic_fetch_add(x, y)
 
-_Atomic int32_t initCount = ATOMIC_VAR_INIT(0);
+static _Atomic int32_t initCount = ATOMIC_VAR_INIT(0);
 #else
 /* use darwin atomics if the target is older than 10.12 */
 #include <libkern/OSAtomic.h>
