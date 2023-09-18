@@ -42,9 +42,10 @@ func TestThreadedEnumerateHid(t *testing.T) {
 
 // Tests that RAW enumeration can be called concurrently from multiple threads.
 func TestThreadedEnumerateRaw(t *testing.T) {
-	// Travis does not have usbfs enabled in the Linux kernel
-	if os.Getenv("TRAVIS") != "" && runtime.GOOS == "linux" {
-		t.Skip("Linux on Travis doesn't have usbfs, skipping test")
+	// Neither Travis nor CircleCI has usbfs enabled in the Linux kernel
+	if runtime.GOOS == "linux" &&
+		(os.Getenv("TRAVIS") != "" || os.Getenv("CIRCLECI") != "") {
+		t.Skip("Linux on CI doesn't have usbfs, skipping test")
 	}
 	// Yay, we can actually test this
 	var pend sync.WaitGroup
@@ -65,9 +66,10 @@ func TestThreadedEnumerateRaw(t *testing.T) {
 
 // Tests that generic enumeration can be called concurrently from multiple threads.
 func TestThreadedEnumerate(t *testing.T) {
-	// Travis does not have usbfs enabled in the Linux kernel
-	if os.Getenv("TRAVIS") != "" && runtime.GOOS == "linux" {
-		t.Skip("Linux on Travis doesn't have usbfs, skipping test")
+	// Neither Travis nor CircleCI has usbfs enabled in the Linux kernel
+	if runtime.GOOS == "linux" &&
+		(os.Getenv("TRAVIS") != "" || os.Getenv("CIRCLECI") != "") {
+		t.Skip("Linux on CI doesn't have usbfs, skipping test")
 	}
 	var pend sync.WaitGroup
 	for i := 0; i < 8; i++ {
