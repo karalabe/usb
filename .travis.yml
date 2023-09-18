@@ -3,37 +3,32 @@ language: go
 matrix:
   include:
     - os: linux
-      dist: trusty
-      go: 1.5.x
+      dist: bionic #18.04
+      go: 1.19.x
     - os: linux
-      dist: trusty
-      go: 1.6.x
+      dist: focal #20.04
+      go: 1.19.x
     - os: linux
-      dist: trusty
-      go: 1.7.x
+      dist: jammy #22.04
+      go: 1.19.x
     - os: linux
-      dist: trusty
-      go: 1.8.x
+      dist: bionic #18.04
+      go: 1.20.x
     - os: linux
-      dist: trusty
-      go: 1.9.x
+      dist: focal #20.04
+      go: 1.20.x
     - os: linux
-      dist: xenial
-      go: 1.9.x
+      dist: jammy #22.04
+      go: 1.20.x
     - os: linux
-      dist: xenial
-      go: 1.10.x
+      dist: bionic #18.04
+      go: 1.21.x
     - os: linux
-      dist: xenial
-      go: 1.11.x
+      dist: focal #20.04
+      go: 1.21.x
     - os: linux
-      dist: xenial
-      go: 1.12.x
-    - os: osx
-      go: 1.12.x
-    - os: linux
-      dist: bionic
-      go: 1.13.x
+      dist: jammy #22.04
+      go: 1.21.x
       services:
         - docker
       env:
