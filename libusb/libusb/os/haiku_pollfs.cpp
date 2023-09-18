@@ -97,20 +97,20 @@ WatchedEntry::WatchedEntry(BMessenger *messenger, entry_ref *ref)
 			unsigned long session_id = (unsigned long)&fDevice;
 
 			usbi_mutex_lock(&active_contexts_lock);
-			for_each_context(ctx) {
+			list_for_each_entry(ctx, &active_contexts_list, list, struct libusb_context) {
 				struct libusb_device *dev = usbi_get_device_by_session_id(ctx, session_id);
 				if (dev) {
-					usbi_dbg(NULL, "using previously allocated device with location %lu", session_id);
+					usbi_dbg("using previously allocated device with location %lu", session_id);
 					libusb_unref_device(dev);
 					continue;
 				}
-				usbi_dbg(NULL, "allocating new device with location %lu", session_id);
+				usbi_dbg("allocating new device with location %lu", session_id);
 				dev = usbi_alloc_device(ctx, session_id);
 				if (!dev) {
-					usbi_dbg(NULL, "device allocation failed");
+					usbi_dbg("device allocation failed");
 					continue;
 				}
-				*((USBDevice **)usbi_get_device_priv(dev)) = fDevice;
+				*((USBDevice **)dev->os_priv) = fDevice;
 
 				// Calculate pseudo-device-address
 				int addr, tmp;
@@ -125,16 +125,11 @@ WatchedEntry::WatchedEntry(BMessenger *messenger, entry_ref *ref)
 					addr += tmp + 1;
 					parent_path.GetParent(&parent_path);
 				}
-				sscanf(path.Path(), "/dev/bus/usb/%hhu", &dev->bus_number);
+				sscanf(path.Path(), "/dev/bus/usb/%d", &dev->bus_number);
 				dev->device_address = addr - (dev->bus_number + 1);
 
-				static_assert(sizeof(dev->device_descriptor) == sizeof(usb_device_descriptor),
-					      "mismatch between libusb and OS device descriptor sizes");
-				memcpy(&dev->device_descriptor, fDevice->Descriptor(), LIBUSB_DT_DEVICE_SIZE);
-				usbi_localize_device_descriptor(&dev->device_descriptor);
-
 				if (usbi_sanitize_device(dev) < 0) {
-					usbi_dbg(NULL, "device sanitization failed");
+					usbi_dbg("device sanitization failed");
 					libusb_unref_device(dev);
 					continue;
 				}
@@ -172,13 +167,13 @@ WatchedEntry::~WatchedEntry()
 		unsigned long session_id = (unsigned long)&fDevice;
 
 		usbi_mutex_lock(&active_contexts_lock);
-		for_each_context(ctx) {
+		list_for_each_entry(ctx, &active_contexts_list, list, struct libusb_context) {
 			dev = usbi_get_device_by_session_id(ctx, session_id);
 			if (dev != NULL) {
 				usbi_disconnect_device(dev);
 				libusb_unref_device(dev);
 			} else {
-				usbi_dbg(ctx, "device with location %lu not found", session_id);
+				usbi_dbg("device with location %lu not found", session_id);
 			}
 		}
 		usbi_mutex_static_unlock(&active_contexts_lock);

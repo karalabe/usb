@@ -21,21 +21,27 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libusbi.h"
-#include "linux_usbfs.h"
+#include <config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #ifdef HAVE_ASM_TYPES_H
 #include <asm/types.h>
 #endif
+
 #include <sys/socket.h>
 #include <linux/netlink.h>
+
+#include "libusbi.h"
+#include "linux_usbfs.h"
 
 #define NL_GROUP_KERNEL 1
 
@@ -48,7 +54,7 @@
 #endif
 
 static int linux_netlink_socket = -1;
-static usbi_event_t netlink_control_event = USBI_INVALID_EVENT;
+static int netlink_control_pipe[2] = { -1, -1 };
 static pthread_t libusb_linux_event_thread;
 
 static void *linux_netlink_event_thread_main(void *arg);
@@ -62,12 +68,12 @@ static int set_fd_cloexec_nb(int fd, int socktype)
 	if (!(socktype & SOCK_CLOEXEC)) {
 		flags = fcntl(fd, F_GETFD);
 		if (flags == -1) {
-			usbi_err(NULL, "failed to get netlink fd flags, errno=%d", errno);
+			usbi_err(NULL, "failed to get netlink fd flags (%d)", errno);
 			return -1;
 		}
 
 		if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1) {
-			usbi_err(NULL, "failed to set netlink fd flags, errno=%d", errno);
+			usbi_err(NULL, "failed to set netlink fd flags (%d)", errno);
 			return -1;
 		}
 	}
@@ -77,12 +83,12 @@ static int set_fd_cloexec_nb(int fd, int socktype)
 	if (!(socktype & SOCK_NONBLOCK)) {
 		flags = fcntl(fd, F_GETFL);
 		if (flags == -1) {
-			usbi_err(NULL, "failed to get netlink fd status flags, errno=%d", errno);
+			usbi_err(NULL, "failed to get netlink fd status flags (%d)", errno);
 			return -1;
 		}
 
 		if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-			usbi_err(NULL, "failed to set netlink fd status flags, errno=%d", errno);
+			usbi_err(NULL, "failed to set netlink fd status flags (%d)", errno);
 			return -1;
 		}
 	}
@@ -99,13 +105,13 @@ int linux_netlink_start_event_monitor(void)
 
 	linux_netlink_socket = socket(PF_NETLINK, socktype, NETLINK_KOBJECT_UEVENT);
 	if (linux_netlink_socket == -1 && errno == EINVAL) {
-		usbi_dbg(NULL, "failed to create netlink socket of type %d, attempting SOCK_RAW", socktype);
+		usbi_dbg("failed to create netlink socket of type %d, attempting SOCK_RAW", socktype);
 		socktype = SOCK_RAW;
 		linux_netlink_socket = socket(PF_NETLINK, socktype, NETLINK_KOBJECT_UEVENT);
 	}
 
 	if (linux_netlink_socket == -1) {
-		usbi_err(NULL, "failed to create netlink socket, errno=%d", errno);
+		usbi_err(NULL, "failed to create netlink socket (%d)", errno);
 		goto err;
 	}
 
@@ -115,33 +121,35 @@ int linux_netlink_start_event_monitor(void)
 
 	ret = bind(linux_netlink_socket, (struct sockaddr *)&sa_nl, sizeof(sa_nl));
 	if (ret == -1) {
-		usbi_err(NULL, "failed to bind netlink socket, errno=%d", errno);
+		usbi_err(NULL, "failed to bind netlink socket (%d)", errno);
 		goto err_close_socket;
 	}
 
 	ret = setsockopt(linux_netlink_socket, SOL_SOCKET, SO_PASSCRED, &opt, sizeof(opt));
 	if (ret == -1) {
-		usbi_err(NULL, "failed to set netlink socket SO_PASSCRED option, errno=%d", errno);
+		usbi_err(NULL, "failed to set netlink socket SO_PASSCRED option (%d)", errno);
 		goto err_close_socket;
 	}
 
-	ret = usbi_create_event(&netlink_control_event);
+	ret = usbi_pipe(netlink_control_pipe);
 	if (ret) {
-		usbi_err(NULL, "failed to create netlink control event");
+		usbi_err(NULL, "failed to create netlink control pipe");
 		goto err_close_socket;
 	}
 
 	ret = pthread_create(&libusb_linux_event_thread, NULL, linux_netlink_event_thread_main, NULL);
 	if (ret != 0) {
 		usbi_err(NULL, "failed to create netlink event thread (%d)", ret);
-		goto err_destroy_event;
+		goto err_close_pipe;
 	}
 
 	return LIBUSB_SUCCESS;
 
-err_destroy_event:
-	usbi_destroy_event(&netlink_control_event);
-	netlink_control_event = (usbi_event_t)USBI_INVALID_EVENT;
+err_close_pipe:
+	close(netlink_control_pipe[0]);
+	close(netlink_control_pipe[1]);
+	netlink_control_pipe[0] = -1;
+	netlink_control_pipe[1] = -1;
 err_close_socket:
 	close(linux_netlink_socket);
 	linux_netlink_socket = -1;
@@ -151,22 +159,27 @@ err:
 
 int linux_netlink_stop_event_monitor(void)
 {
-	int ret;
+	char dummy = 1;
+	ssize_t r;
 
 	assert(linux_netlink_socket != -1);
 
-	/* Signal the control event and wait for the thread to exit */
-	usbi_signal_event(&netlink_control_event);
+	/* Write some dummy data to the control pipe and
+	 * wait for the thread to exit */
+	r = write(netlink_control_pipe[1], &dummy, sizeof(dummy));
+	if (r <= 0)
+		usbi_warn(NULL, "netlink control pipe signal failed");
 
-	ret = pthread_join(libusb_linux_event_thread, NULL);
-	if (ret)
-		usbi_warn(NULL, "failed to join netlink event thread (%d)", ret);
-
-	usbi_destroy_event(&netlink_control_event);
-	netlink_control_event = (usbi_event_t)USBI_INVALID_EVENT;
+	pthread_join(libusb_linux_event_thread, NULL);
 
 	close(linux_netlink_socket);
 	linux_netlink_socket = -1;
+
+	/* close and reset control pipe */
+	close(netlink_control_pipe[0]);
+	close(netlink_control_pipe[1]);
+	netlink_control_pipe[0] = -1;
+	netlink_control_pipe[1] = -1;
 
 	return LIBUSB_SUCCESS;
 }
@@ -204,7 +217,7 @@ static int linux_netlink_parse(const char *buffer, size_t len, int *detached,
 	} else if (strcmp(tmp, "remove") == 0) {
 		*detached = 1;
 	} else if (strcmp(tmp, "add") != 0) {
-		usbi_dbg(NULL, "unknown device action %s", tmp);
+		usbi_dbg("unknown device action %s", tmp);
 		return -1;
 	}
 
@@ -301,7 +314,7 @@ static int linux_netlink_read_message(void)
 	len = recvmsg(linux_netlink_socket, &msg, 0);
 	if (len == -1) {
 		if (errno != EAGAIN && errno != EINTR)
-			usbi_err(NULL, "error receiving message from netlink, errno=%d", errno);
+			usbi_err(NULL, "error receiving message from netlink (%d)", errno);
 		return -1;
 	}
 
@@ -311,20 +324,20 @@ static int linux_netlink_read_message(void)
 	}
 
 	if (sa_nl.nl_groups != NL_GROUP_KERNEL || sa_nl.nl_pid != 0) {
-		usbi_dbg(NULL, "ignoring netlink message from unknown group/PID (%u/%u)",
+		usbi_dbg("ignoring netlink message from unknown group/PID (%u/%u)",
 			 (unsigned int)sa_nl.nl_groups, (unsigned int)sa_nl.nl_pid);
 		return -1;
 	}
 
 	cmsg = CMSG_FIRSTHDR(&msg);
 	if (!cmsg || cmsg->cmsg_type != SCM_CREDENTIALS) {
-		usbi_dbg(NULL, "ignoring netlink message with no sender credentials");
+		usbi_dbg("ignoring netlink message with no sender credentials");
 		return -1;
 	}
 
 	cred = (struct ucred *)CMSG_DATA(cmsg);
 	if (cred->uid != 0) {
-		usbi_dbg(NULL, "ignoring netlink message with non-zero sender UID %u", (unsigned int)cred->uid);
+		usbi_dbg("ignoring netlink message with non-zero sender UID %u", (unsigned int)cred->uid);
 		return -1;
 	}
 
@@ -332,7 +345,7 @@ static int linux_netlink_read_message(void)
 	if (r)
 		return r;
 
-	usbi_dbg(NULL, "netlink hotplug found device busnum: %hhu, devaddr: %hhu, sys_name: %s, removed: %s",
+	usbi_dbg("netlink hotplug found device busnum: %hhu, devaddr: %hhu, sys_name: %s, removed: %s",
 		 busnum, devaddr, sys_name, detached ? "yes" : "no");
 
 	/* signal device is available (or not) to all contexts */
@@ -346,45 +359,40 @@ static int linux_netlink_read_message(void)
 
 static void *linux_netlink_event_thread_main(void *arg)
 {
+	char dummy;
+	int r;
+	ssize_t nb;
 	struct pollfd fds[] = {
-		{ .fd = USBI_EVENT_OS_HANDLE(&netlink_control_event),
-		  .events = USBI_EVENT_POLL_EVENTS },
+		{ .fd = netlink_control_pipe[0],
+		  .events = POLLIN },
 		{ .fd = linux_netlink_socket,
 		  .events = POLLIN },
 	};
-	int r;
 
 	UNUSED(arg);
 
-#if defined(HAVE_PTHREAD_SETNAME_NP)
-	r = pthread_setname_np(pthread_self(), "libusb_event");
-	if (r)
-		usbi_warn(NULL, "failed to set hotplug event thread name, error=%d", r);
-#endif
+	usbi_dbg("netlink event thread entering");
 
-	usbi_dbg(NULL, "netlink event thread entering");
-
-	while (1) {
-		r = poll(fds, 2, -1);
-		if (r == -1) {
-			/* check for temporary failure */
-			if (errno == EINTR)
-				continue;
-			usbi_err(NULL, "poll() failed, errno=%d", errno);
+	while ((r = poll(fds, 2, -1)) >= 0 || errno == EINTR) {
+		if (r < 0) {
+			/* temporary failure */
+			continue;
+		}
+		if (fds[0].revents & POLLIN) {
+			/* activity on control pipe, read the byte and exit */
+			nb = read(netlink_control_pipe[0], &dummy, sizeof(dummy));
+			if (nb <= 0)
+				usbi_warn(NULL, "netlink control pipe read failed");
 			break;
 		}
-		if (fds[0].revents) {
-			/* activity on control event, exit */
-			break;
-		}
-		if (fds[1].revents) {
+		if (fds[1].revents & POLLIN) {
 			usbi_mutex_static_lock(&linux_hotplug_lock);
 			linux_netlink_read_message();
 			usbi_mutex_static_unlock(&linux_hotplug_lock);
 		}
 	}
 
-	usbi_dbg(NULL, "netlink event thread exiting");
+	usbi_dbg("netlink event thread exiting");
 
 	return NULL;
 }

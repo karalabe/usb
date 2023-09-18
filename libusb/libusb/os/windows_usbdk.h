@@ -21,10 +21,9 @@
 * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 */
 
-#ifndef LIBUSB_WINDOWS_USBDK_H
-#define LIBUSB_WINDOWS_USBDK_H
+#pragma once
 
-#include "windows_common.h"
+#include "windows_nt_common.h"
 
 typedef struct USB_DK_CONFIG_DESCRIPTOR_REQUEST {
 	USB_DK_DEVICE_ID ID;
@@ -102,5 +101,3 @@ typedef BOOL (__cdecl *USBDK_RESET_DEVICE)(
 typedef HANDLE (__cdecl *USBDK_GET_REDIRECTOR_SYSTEM_HANDLE)(
 	HANDLE DeviceHandle
 );
-
-#endif
