@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU Lesser General Public License along
 // with the library. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build (freebsd && cgo) || (linux && cgo) || (darwin && !ios && cgo) || (windows && cgo)
 // +build freebsd,cgo linux,cgo darwin,!ios,cgo windows,cgo
 
 package usb
@@ -34,9 +35,9 @@ import (
 
 // enumerateRaw returns a list of all the USB devices attached to the system which
 // match the vendor and product id:
-//  - If the vendor id is set to 0 then any vendor matches.
-//  - If the product id is set to 0 then any product matches.
-//  - If the vendor and product id are both 0, all USB devices are returned.
+//   - If the vendor id is set to 0 then any vendor matches.
+//   - If the product id is set to 0 then any product matches.
+//   - If the vendor and product id are both 0, all USB devices are returned.
 func enumerateRaw(vendorID uint16, productID uint16) ([]DeviceInfo, error) {
 	// Enumerate the devices, and free all the matching refcounts (we'll reopen any
 	// explicitly requested).
@@ -147,7 +148,7 @@ func enumerateRawWithRef(vendorID uint16, productID uint16) ([]DeviceInfo, error
 
 						port := uint8(C.libusb_get_port_number(dev))
 						infos = append(infos, DeviceInfo{
-							Path:      fmt.Sprintf("%04x:%04x:%02d", vendorID, uint16(desc.idProduct), port),
+							Path:      fmt.Sprintf("%04x:%04x:%02d", uint16(desc.idVendor), uint16(desc.idProduct), port),
 							VendorID:  uint16(desc.idVendor),
 							ProductID: uint16(desc.idProduct),
 							Interface: ifacenum,
