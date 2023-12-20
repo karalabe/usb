@@ -13,9 +13,23 @@
 // You should have received a copy of the GNU Lesser General Public License along
 // with the library. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build (freebsd && cgo) || (linux && cgo) || (darwin && !ios && cgo) || (windows && cgo)
 // +build freebsd,cgo linux,cgo darwin,!ios,cgo windows,cgo
 
 package usb
+
+/*
+Linux uses the 'libudev' package.
+
+On Fedora:
+
+	dnf install systemd-devel
+
+On Ubuntu:
+
+	apt install libhidapi-dev
+
+*/
 
 /*
 #cgo CFLAGS: -I./hidapi/hidapi
@@ -24,7 +38,7 @@ package usb
 #cgo CFLAGS: -DPOLL_NFDS_TYPE=int
 
 #cgo linux CFLAGS: -DOS_LINUX -D_GNU_SOURCE -DHAVE_SYS_TIME_H
-#cgo linux,!android LDFLAGS: -lrt
+#cgo linux,!android LDFLAGS: -lrt -ludev
 #cgo darwin CFLAGS: -DOS_DARWIN -DHAVE_SYS_TIME_H
 #cgo darwin LDFLAGS: -framework CoreFoundation -framework IOKit -lobjc
 #cgo windows CFLAGS: -DOS_WINDOWS
@@ -45,7 +59,7 @@ package usb
 #ifdef OS_LINUX
 	#include "os/linux_usbfs.c"
 	#include "os/linux_netlink.c"
-	#include "hidapi/libusb/hid.c"
+	#include "hidapi/linux/hid.c"
 #elif OS_DARWIN
 	#include "os/darwin_usb.c"
 	#include "hidapi/mac/hid.c"

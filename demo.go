@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU Lesser General Public License along
 // with the library. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build none
 // +build none
 
 package main
@@ -47,7 +48,7 @@ func main() {
 		fmt.Printf("  Serial:       %s\n", hid.Serial)
 		fmt.Printf("  Manufacturer: %s\n", hid.Manufacturer)
 		fmt.Printf("  Product:      %s\n", hid.Product)
-		fmt.Printf("  Usage Page:   %d\n", hid.UsagePage)
+		fmt.Printf("  Usage Page:   %#04x\n", hid.UsagePage)
 		fmt.Printf("  Usage:        %d\n", hid.Usage)
 		fmt.Printf("  Interface:    %d\n", hid.Interface)
 	}
