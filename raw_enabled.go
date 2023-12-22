@@ -120,7 +120,6 @@ func enumerateRawWithRef(vendorID uint16, productID uint16) ([]DeviceInfo, error
 					if alt.bInterfaceClass == C.LIBUSB_CLASS_HID {
 						continue
 					}
-					// Find the endpoints that can speak libusb interrupts
 					var ends []C.struct_libusb_endpoint_descriptor
 					*(*reflect.SliceHeader)(unsafe.Pointer(&ends)) = reflect.SliceHeader{
 						Data: uintptr(unsafe.Pointer(alt.endpoint)),
@@ -129,14 +128,18 @@ func enumerateRawWithRef(vendorID uint16, productID uint16) ([]DeviceInfo, error
 					}
 					var reader, writer *uint8
 					for _, end := range ends {
-						// Skip any non-interrupt endpoints
-						if end.bmAttributes != C.LIBUSB_TRANSFER_TYPE_INTERRUPT {
-							continue
+						maskedAttributes := end.bmAttributes & C.LIBUSB_TRANSFER_TYPE_MASK
+						is_interrupt := maskedAttributes == C.LIBUSB_TRANSFER_TYPE_INTERRUPT
+						is_bulk := maskedAttributes == C.LIBUSB_TRANSFER_TYPE_BULK
+
+						if !is_interrupt && !is_bulk {
+							continue // Skip non-interrupt and non-bulk endpoints
 						}
+
 						if end.bEndpointAddress&C.LIBUSB_ENDPOINT_IN == C.LIBUSB_ENDPOINT_IN {
 							reader = new(uint8)
 							*reader = uint8(end.bEndpointAddress)
-						} else {
+						} else if end.bEndpointAddress&C.LIBUSB_ENDPOINT_OUT == C.LIBUSB_ENDPOINT_OUT {
 							writer = new(uint8)
 							*writer = uint8(end.bEndpointAddress)
 						}
